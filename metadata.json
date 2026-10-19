@@ -1,0 +1,19 @@
+{
+    "KPlugin": {
+        "Id": "org.paulo.audioswitch",
+        "Name": "Audio Output Switch",
+        "Description": "One-click switch between two audio output ports (e.g. Line Out and Headphones)",
+        "Icon": "audio-headphones",
+        "Authors": [
+            {
+                "Name": "Paulo Fagandini"
+            }
+        ],
+        "License": "MIT",
+        "Version": "1.0.0",
+        "Category": "Multimedia",
+        "EnabledByDefault": true
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API-Minimum-Version": "6.0"
+}
