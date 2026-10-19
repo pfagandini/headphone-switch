@@ -238,7 +238,8 @@ PlasmoidItem {
     }
 
     Connections {
-        target: Plasmoid.configuration
+        target: root.config
+        ignoreUnknownSignals: true
         function onValueChanged() { root.refresh(); }
     }
 
