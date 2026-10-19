@@ -243,18 +243,14 @@ PlasmoidItem {
         function onValueChanged() { root.refresh(); }
     }
 
-    compactRepresentation: Item {
+    compactRepresentation: Kirigami.Icon {
         id: compact
 
-        implicitWidth: Kirigami.Units.iconSizes.smallMedium
-        implicitHeight: implicitWidth
+        Layout.minimumWidth: height
+        Layout.minimumHeight: 0
 
-        Kirigami.Icon {
-            id: icon
-            anchors.fill: parent
-            source: root.currentIcon
-            active: mouseArea.containsMouse
-        }
+        source: root.currentIcon
+        active: mouseArea.containsMouse
 
         MouseArea {
             id: mouseArea
