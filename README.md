@@ -106,6 +106,11 @@ is nothing to switch at all, it moves into the tray's hidden area.
   representation; without one the widget is treated as permanently expanded and
   shows nothing in the tray. That is why the port popup exists.
 
+## AI assistance
+
+This widget was written with AI assistance (Claude, by Anthropic). What has
+and has not been tested is listed in [STATUS.md](STATUS.md).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
