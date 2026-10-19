@@ -8,262 +8,151 @@ import QtQuick
 import QtQuick.Layouts
 
 import org.kde.kirigami as Kirigami
-import org.kde.kitemmodels as KItemModels
 import org.kde.plasma.components as PC3
+import org.kde.plasma.core as PlasmaCore
+import org.kde.plasma.extras as PlasmaExtras
 import org.kde.plasma.plasmoid
-import org.kde.plasma.private.volume
 
 PlasmoidItem {
     id: root
 
-    preferredRepresentation: compactRepresentation
+    readonly property QtObject targetSink: selection.sink
+    readonly property var switchPorts: selection.ports
 
-    // The sink we are switching, its two candidate ports, and the active one.
-    property QtObject targetSink: null
-    property var switchPorts: []
-    property int activeIndex: -1
-
-    readonly property var activePort: (switchPorts.length > 0 && activeIndex >= 0)
-        ? switchPorts[activeIndex] : null
-    readonly property var otherPort: (switchPorts.length > 1 && activeIndex >= 0)
-        ? switchPorts[(activeIndex + 1) % switchPorts.length] : null
-
-    readonly property string currentIcon: portIcon(activePort)
-    readonly property string currentName: activePort ? activePort.description : ""
-    readonly property string otherName: otherPort ? otherPort.description : ""
-
-    readonly property string unavailableIcon: "audio-card"
-
-    SinkModel {
-        id: sinkModel
+    // Index into switchPorts (not the sink's own port list); -1 when the sink
+    // is on some third port.
+    readonly property int activeIndex: {
+        const sinkActive = targetSink ? targetSink.activePortIndex : -1;
+        return switchPorts.findIndex(port => port.index === sinkActive);
     }
+    readonly property bool canSwitch: targetSink !== null && switchPorts.length >= 2
 
-    function role(name) {
-        return sinkModel.KItemModels.KRoleNames.role(name);
-    }
+    readonly property var nextPort: canSwitch ? switchPorts[(activeIndex + 1) % switchPorts.length] : null
 
-    readonly property var config: Plasmoid.configuration || null
-
-    function configValue(name, fallback) {
-        if (!config) {
-            return fallback;
-        }
-        const value = config[name];
-        return (value === undefined || value === null) ? fallback : value;
-    }
+    // The port the sink is actually on, even if it is not one of the two.
+    readonly property QtObject currentPort: (targetSink && targetSink.ports)
+        ? targetSink.ports[targetSink.activePortIndex] ?? null
+        : null
 
     function portIcon(port) {
         if (!port) {
-            return unavailableIcon;
-        }
-        switch (port.type) {
-        case Port.Headphones:
-            return "audio-headphones";
-        case Port.Line:
-        case Port.Speaker:
-            return "audio-speakers";
-        case Port.HDMI:
-            return "video-display";
-        default:
             return "audio-card";
         }
-    }
-
-    function availablePorts(sink) {
-        const out = [];
-        if (!sink || !sink.ports) {
-            return out;
+        if (selection.isHeadphones(port)) {
+            return "audio-headphones";
         }
-        for (let i = 0; i < sink.ports.length; ++i) {
-            const port = sink.ports[i];
-            if (port.availability === Port.Unavailable) {
-                continue;
-            }
-            out.push({
-                index: i,
-                name: port.name,
-                description: port.description,
-                type: port.type
-            });
+        if (selection.isLine(port)) {
+            return "audio-speakers";
         }
-        return out;
-    }
-
-    // Pick the sink we should be switching. An explicit configuration wins;
-    // otherwise prefer the default sink, but only if it has at least two
-    // usable ports, then any sink with both a headphone and a line port.
-    function pickSink() {
-        const configured = configValue("sinkName", "");
-        if (configured) {
-            const found = findSink(configured);
-            if (found) {
-                return found;
-            }
-        }
-
-        const rp = role("PulseObject");
-        let best = null;
-        let bestScore = -1;
-
-        for (let i = 0; i < sinkModel.count; ++i) {
-            const sink = sinkModel.data(sinkModel.index(i, 0), rp);
-            if (!sink || !sink.name) {
-                continue;
-            }
-
-            const ports = availablePorts(sink);
-            if (ports.length < 2) {
-                continue;
-            }
-
-            const hasHeadphones = ports.some(p => p.type === Port.Headphones);
-            const hasLine = ports.some(p => p.type === Port.Line || p.type === Port.Speaker);
-
-            let score = 0;
-            if (hasHeadphones) {
-                score += 2;
-            }
-            if (hasLine) {
-                score += 2;
-            }
-            if (sink.default) {
-                score += 1;
-            }
-
-            if (score > bestScore) {
-                best = sink;
-                bestScore = score;
-            }
-        }
-
-        return best;
-    }
-
-    function findSink(name) {
-        const rp = role("PulseObject");
-        for (let i = 0; i < sinkModel.count; ++i) {
-            const sink = sinkModel.data(sinkModel.index(i, 0), rp);
-            if (sink && sink.name === name) {
-                return sink;
-            }
-        }
-        return null;
-    }
-
-    // Exactly two ports to toggle between. Configured ports win; otherwise
-    // headphones first, then line/speaker.
-    function pickPorts(sink) {
-        const ports = availablePorts(sink);
-        if (ports.length < 2) {
-            return ports;
-        }
-
-        const configuredA = configValue("portA", "");
-        const configuredB = configValue("portB", "");
-        const a = ports.find(p => p.name === configuredA);
-        const b = ports.find(p => p.name === configuredB);
-        if (a && b && a.index !== b.index) {
-            return [a, b];
-        }
-
-        const headphones = ports.filter(p => p.type === Port.Headphones);
-        const line = ports.filter(p => p.type === Port.Line || p.type === Port.Speaker);
-
-        if (headphones.length > 0 && line.length > 0) {
-            return [headphones[0], line[0]];
-        }
-        return ports.slice(0, 2);
-    }
-
-    function refresh() {
-        const sink = pickSink();
-
-        if (sink !== targetSink) {
-            if (targetSink) {
-                targetSink.activePortIndexChanged.disconnect(root.refresh);
-                targetSink.portsChanged.disconnect(root.refresh);
-            }
-            targetSink = sink;
-            if (targetSink) {
-                targetSink.activePortIndexChanged.connect(root.refresh);
-                targetSink.portsChanged.connect(root.refresh);
-            }
-        }
-
-        switchPorts = pickPorts(targetSink);
-
-        // activeIndex indexes switchPorts, not the sink's own port list.
-        const sinkActiveIndex = targetSink ? targetSink.activePortIndex : -1;
-        activeIndex = switchPorts.findIndex(port => port.index === sinkActiveIndex);
-
-        Plasmoid.toolTipMainText = activePort
-            ? i18n("Audio output: %1", activePort.description)
-            : i18n("Audio output: unknown");
-        Plasmoid.toolTipSubText = otherPort
-            ? i18n("Click to switch to %1", otherPort.description)
-            : "";
+        return "audio-card";
     }
 
     function toggle() {
-        if (!targetSink || switchPorts.length < 2) {
-            return;
+        if (nextPort) {
+            targetSink.activePortIndex = nextPort.index;
         }
-
-        // If the current port is not one of the two we switch, go to the first
-        // one; otherwise advance to the next.
-        const next = activeIndex < 0
-            ? switchPorts[0]
-            : switchPorts[(activeIndex + 1) % switchPorts.length];
-        targetSink.activePortIndex = next.index;
-
-        // The write is asynchronous; refresh again once it has landed.
-        refreshTimer.restart();
     }
 
-    Timer {
-        id: refreshTimer
-        interval: 250
-        repeat: false
-        onTriggered: root.refresh()
-    }
+    // Large enough that the widget is always an icon in a panel or the tray;
+    // the full representation only shows in the popup or on the desktop.
+    switchWidth: Kirigami.Units.gridUnit * 10
+    switchHeight: Kirigami.Units.gridUnit * 8
 
-    Component.onCompleted: refresh()
+    // A global shortcut (or Enter on the focused tray icon) switches output
+    // instead of opening the popup.
+    activationTogglesExpanded: false
+
+    Plasmoid.icon: portIcon(currentPort)
+    Plasmoid.status: canSwitch ? PlasmaCore.Types.ActiveStatus : PlasmaCore.Types.PassiveStatus
+
+    toolTipMainText: currentPort
+        ? i18n("Audio output: %1", currentPort.description)
+        : i18n("No switchable audio output")
+    toolTipSubText: canSwitch
+        ? i18n("Click to switch to %1\nMiddle-click for all outputs", nextPort.description)
+        : ""
+
+    OutputSelection {
+        id: selection
+        sinkName: Plasmoid.configuration.sinkName
+        portA: Plasmoid.configuration.portA
+        portB: Plasmoid.configuration.portB
+    }
 
     Connections {
-        target: sinkModel
-        function onModelReset() { root.refresh(); }
-        function onDataChanged() { root.refresh(); }
-        function onRowsInserted() { root.refresh(); }
-        function onRowsRemoved() { root.refresh(); }
+        target: Plasmoid
+        function onActivated() { root.toggle(); }
     }
 
-    Connections {
-        target: root.config
-        ignoreUnknownSignals: true
-        function onValueChanged() { root.refresh(); }
-    }
-
-    compactRepresentation: Kirigami.Icon {
+    compactRepresentation: MouseArea {
         id: compact
 
+        property bool wasExpanded: false
+
+        // Same minimum sizes as Plasma's default compact representation.
         Layout.minimumWidth: height
-        Layout.minimumHeight: 0
+        Layout.minimumHeight: width
 
-        source: root.currentIcon
-        active: mouseArea.containsMouse
+        hoverEnabled: true
+        acceptedButtons: Qt.LeftButton | Qt.MiddleButton
 
-        MouseArea {
-            id: mouseArea
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: root.toggle()
+        // The system tray forwards presses by calling this handler directly,
+        // so it must exist.
+        onPressed: mouse => {
+            wasExpanded = root.expanded;
+        }
+        onClicked: mouse => {
+            if (mouse.button === Qt.MiddleButton) {
+                root.expanded = !wasExpanded;
+            } else {
+                root.toggle();
+            }
         }
 
-        PC3.ToolTip {
-            text: root.activePort
-                ? i18n("%1 → click for %2", root.activePort.description, root.otherName)
-                : i18n("No switchable audio output found")
+        Kirigami.Icon {
+            anchors.fill: parent
+            source: Plasmoid.icon
+            active: compact.containsMouse
+        }
+    }
+
+    // Plasma needs a full representation: without one it treats the applet
+    // itself as expanded and never creates the icon. Here it lists every
+    // usable port of the sink so any of them can be picked directly.
+    fullRepresentation: PlasmaExtras.Representation {
+        Layout.minimumWidth: Kirigami.Units.gridUnit * 12
+        Layout.preferredWidth: Kirigami.Units.gridUnit * 16
+        Layout.preferredHeight: implicitHeight
+
+        ColumnLayout {
+            anchors {
+                left: parent.left
+                right: parent.right
+                top: parent.top
+                margins: Kirigami.Units.smallSpacing
+            }
+            spacing: Kirigami.Units.smallSpacing
+
+            PlasmaExtras.Heading {
+                Layout.fillWidth: true
+                level: 4
+                elide: Text.ElideRight
+                text: root.targetSink ? root.targetSink.description : i18n("No switchable audio output")
+            }
+
+            Repeater {
+                model: selection.sinkPorts
+
+                delegate: PC3.RadioButton {
+                    required property var modelData
+
+                    Layout.fillWidth: true
+                    icon.name: root.portIcon(modelData)
+                    text: modelData.description
+                    checked: root.targetSink !== null && root.targetSink.activePortIndex === modelData.index
+                    onToggled: root.targetSink.activePortIndex = modelData.index
+                }
+            }
         }
     }
 }
