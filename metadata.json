@@ -11,6 +11,8 @@
         ],
         "License": "MIT",
         "Version": "1.1.0",
+        "Website": "https://github.com/pfagandini/headphone-switch",
+        "BugReportUrl": "https://github.com/pfagandini/headphone-switch/issues",
         "Category": "Multimedia",
         "EnabledByDefault": true
     },
